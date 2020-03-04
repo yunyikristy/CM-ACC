@@ -62,8 +62,8 @@ def train_epoch(epoch, data_loader, model, model_clone, feature_v_pool, feature_
         feature_a_pool_all = torch.cat([feature_a.detach(), feature_a_pool], dim=0)
         feature_v_pool_all = torch.cat([feature_v.detach(), feature_v_pool], dim=0)
 
-        cosv2a = torch.mm(feature_a_all, feature_v.t()).t()
-        cosa2v = torch.mm(feature_v_all, feature_a.t()).t()
+        cosv2a = torch.mm(feature_a_pool_all, feature_v.t()).t()
+        cosa2v = torch.mm(feature_v_pool_all, feature_a.t()).t()
 
         lossv2a = criterion(cosv2a, target)
         lossa2v = criterion(cosa2v, target)
@@ -98,14 +98,13 @@ def train_epoch(epoch, data_loader, model, model_clone, feature_v_pool, feature_
         feature_a_dict_all = torch.cat([feature_a.detach(), feature_a_dict], dim=0)
         feature_v_dict_all = torch.cat([feature_v.detach(), feature_v_dict], dim=0)
 
-        cosv2a = torch.mm(feature_a_all, feature_v.t()).t()
-        cosa2v = torch.mm(feature_v_all, feature_a.t()).t()
+        cosv2a = torch.mm(feature_a_dict_all, feature_v.t()).t()
+        cosa2v = torch.mm(feature_v_dict_all, feature_a.t()).t()
 
         lossv2a = criterion(cosv2a, target).mean()
         lossa2v = criterion(cosa2v, target).mean()
 
         loss = lossv2a + lossa2v
-
 
         acc = calculate_accuracy(cosv2a, target)
 
@@ -170,4 +169,4 @@ def train_epoch(epoch, data_loader, model, model_clone, feature_v_pool, feature_
         }
         torch.save(states, save_file_path)
 
-    return feature_v_dict, feature_a_dict, nowidx
+    return feature_v_pool, feature_a_pool, nowidx_pool, feature_v_dict, feature_a_dict, nowidx_dict
