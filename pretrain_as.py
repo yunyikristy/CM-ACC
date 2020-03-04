@@ -54,40 +54,43 @@ def train_epoch(epoch, data_loader, model, model_clone, feature_v_pool, feature_
         bs = video.size(0)
         device = video.device
 
-        feature_v, feature_a = model(video, audio)
+        feature_v, feature_a = model(video, audio) # M * 512, M * 512
 
 
         # sampling hard example based on gradient from pool
         #target = torch.arange(bs).to(device=device)
-        feature_a_pool_all = torch.cat([feature_a.detach(), feature_a_pool], dim=0)
-        feature_v_pool_all = torch.cat([feature_v.detach(), feature_v_pool], dim=0)
+        feature_a_pool_all = torch.cat([feature_a.detach(), feature_a_pool], dim=0) # (M+N) * 512
+        feature_v_pool_all = torch.cat([feature_v.detach(), feature_v_pool], dim=0) # (M+N) * 512
 
-        cosv2a = torch.mm(feature_a_pool_all, feature_v.t()).t()
-        cosa2v = torch.mm(feature_v_pool_all, feature_a.t()).t()
+        cosv2a = torch.mm(feature_a_pool_all, feature_v.t()).t() # M * (M+N)
+        cosa2v = torch.mm(feature_v_pool_all, feature_a.t()).t() # M * (M+N)
 
-        lossv2a = criterion(cosv2a, target)
-        lossa2v = criterion(cosa2v, target)
+        lossv2a = criterion(cosv2a, target) # M * (M+N)
+        lossa2v = criterion(cosa2v, target) # M * (M+N)
+
+        lossv2a = lossv2a.mean() # 1
+        lossa2v = lossa2v.mean() # 1
 
         # have not tested
 
         lossv2a.backward()
         lossa2v.backward()
 
-        a_pool_gradient = feature_a_pool_all.grad.data
-        v_pool_gradient = feature_v_pool_all.grad.data
+        a_pool_gradient = feature_a_pool_all.grad.data # (M+N) * 512
+        v_pool_gradient = feature_v_pool_all.grad.data # (M+N) * 512
 
 
         # a fake function
-        a_idx = kmeanspp(a_pool_gradient)
-        v_idx = kmeanspp(v_pool_gradient)
+        a_idx = kmeanspp(a_pool_gradient) # M
+        v_idx = kmeanspp(v_pool_gradient) # M
 
-        a_pool_sample = feature_a_pool_all[a_idx]
-        v_pool_sample = feature_v_pool_all[v_idx]
+        a_pool_sample = feature_a_pool_all[a_idx] # M * 512
+        v_pool_sample = feature_v_pool_all[v_idx] # M * 512
 
         pool_shape = a_idx.shape[0]
         
         feature_v_dict[nowidx_dict:nowidx_dict+pool_shape] = v_pool_sample.detach()
-        feature_a_dict[nowidx:nowidx+pool_shape] = a_pool_sample.detach()
+        feature_a_dict[nowidx_dict:nowidx_dict+pool_shape] = a_pool_sample.detach()
         nowidx_dict += pool_shape
         if nowidx_dict + pool_shape > feature_v_dict.shape[0]:
             nowidx_dict = 0
@@ -95,14 +98,14 @@ def train_epoch(epoch, data_loader, model, model_clone, feature_v_pool, feature_
 
 
         # compute loss with dict
-        feature_a_dict_all = torch.cat([feature_a.detach(), feature_a_dict], dim=0)
-        feature_v_dict_all = torch.cat([feature_v.detach(), feature_v_dict], dim=0)
+        feature_a_dict_all = torch.cat([feature_a.detach(), feature_a_dict], dim=0) # (M+K) * 512
+        feature_v_dict_all = torch.cat([feature_v.detach(), feature_v_dict], dim=0) # (M+K) * 512
 
-        cosv2a = torch.mm(feature_a_dict_all, feature_v.t()).t()
-        cosa2v = torch.mm(feature_v_dict_all, feature_a.t()).t()
+        cosv2a = torch.mm(feature_a_dict_all, feature_v.t()).t() # M * (M+K)
+        cosa2v = torch.mm(feature_v_dict_all, feature_a.t()).t() # M * (M+K)
 
-        lossv2a = criterion(cosv2a, target).mean()
-        lossa2v = criterion(cosa2v, target).mean()
+        lossv2a = criterion(cosv2a, target).mean() # 1
+        lossa2v = criterion(cosa2v, target).mean() # 1
 
         loss = lossv2a + lossa2v
 
