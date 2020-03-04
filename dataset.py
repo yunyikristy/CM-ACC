@@ -1,4 +1,5 @@
 from datasets.kinetics import Kinetics
+from datasets.kinetics_va import Kinetics_va
 from datasets.activitynet import ActivityNet
 from datasets.ucf101 import UCF101
 from datasets.hmdb51 import HMDB51
@@ -6,9 +7,18 @@ from datasets.hmdb51 import HMDB51
 
 def get_training_set(opt, spatial_transform, temporal_transform,
                      target_transform):
-    assert opt.dataset in ['kinetics', 'activitynet', 'ucf101', 'hmdb51']
+    assert opt.dataset in ['kinetics', 'activitynet', 'ucf101', 'hmdb51', 'kinetics_va']
 
-    if opt.dataset == 'kinetics':
+    if opt.dataset == 'kinetics_va':
+        training_data = Kinetics_va(
+            opt.video_path,
+            opt.annotation_path,
+            'training',
+            spatial_transform=spatial_transform,
+            temporal_transform=temporal_transform,
+            target_transform=target_transform)
+
+    elif opt.dataset == 'kinetics':
         training_data = Kinetics(
             opt.video_path,
             opt.annotation_path,

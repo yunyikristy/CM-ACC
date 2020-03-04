@@ -1,15 +1,55 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 from models import resnet, pre_act_resnet, wide_resnet, resnext, densenet
+from resnet1d import resnet18_1d
 
+
+class VA(nn.Module):
+
+    def __init__(self, opt):
+        super(VA, self).__init__()
+
+        self.v_model = resnet.resnet18(
+            num_classes=opt.n_classes,
+            shortcut_type=opt.resnet_shortcut,
+            sample_size=opt.sample_size,
+            sample_duration=opt.sample_duration
+        )
+
+        self.a_model = resnet18_1d()
+
+        self.a_data_bn = nn.BatchNorm1d(80)
+
+        self.v_bn = nn.BatchNorm1d(512)
+        self.a_bn = nn.BatchNorm1d(512)
+
+    def forward(self, v, a):
+
+
+        feature_v = self.v_model.forward_cnn(v)
+        a = a.permute(0, 2, 1)
+        a = self.a_data_bn(a)
+        feature_a = self.a_model(a).mean(dim=2)
+
+        feature_v = self.v_bn(feature_v)
+        feature_a = self.a_bn(feature_a)
+
+        #feature_v = F.normalize(feature_v, p=2, dim=1)
+        #feature_a = F.normalize(feature_a, p=2, dim=1)
+
+        return feature_v, feature_a
 
 def generate_model(opt):
     assert opt.model in [
-        'resnet', 'preresnet', 'wideresnet', 'resnext', 'densenet'
+        'resnet', 'preresnet', 'wideresnet', 'resnext', 'densenet', 'va'
     ]
 
-    if opt.model == 'resnet':
+    if opt.model == 'va':
+        model = VA(opt)
+
+    elif opt.model == 'resnet':
         assert opt.model_depth in [10, 18, 34, 50, 101, 152, 200]
 
         from models.resnet import get_fine_tuning_parameters
