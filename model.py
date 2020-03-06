@@ -22,6 +22,9 @@ class VA(nn.Module):
 
         self.a_data_bn = nn.BatchNorm1d(80)
 
+        self.a_fc = nn.Linear(512,512)
+        self.v_fc = nn.Linear(512,512)
+
         self.v_bn = nn.BatchNorm1d(512)
         self.a_bn = nn.BatchNorm1d(512)
 
@@ -40,6 +43,11 @@ class VA(nn.Module):
         #feature_a = F.normalize(feature_a, p=2, dim=1)
 
         return feature_v, feature_a
+
+    def swap_av(self):
+        tmp = self.a_fc
+        self.a_fc = self.v_fc
+        self.v_fc = tmp
 
 def generate_model(opt):
     assert opt.model in [

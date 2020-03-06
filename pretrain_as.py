@@ -118,7 +118,9 @@ def train_epoch(epoch, data_loader, model, model_clone, feature_v_pool, feature_
         loss.backward()
         optimizer.step()
 
+        model_clone.swap_av()
         momentum_update(model, model_clone, 0.9)
+        model_clone.swap_av()
 
         # update pool
         with torch.no_grad():
