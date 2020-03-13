@@ -1,13 +1,13 @@
-from numpy import *
+import numpy as np
 import codecs
  
 #计算欧氏距离
 def distance(x1,x2):
-    return sqrt(sum(power(x1-x2,2)))
+    return np.sqrt(sum(np.power(x1-x2,2)))
  
 #对一个样本找到与该样本距离最近的聚类中心
 def nearest(point, cluster_centers):
-    min_dist = inf
+    min_dist = np.inf
     m = np.shape(cluster_centers)[0]  # 当前已经初始化的聚类中心的个数
     for i in range(m):
         # 计算point与每个聚类中心之间的距离
@@ -32,7 +32,7 @@ def get_centroids(dataset, k):
             # 4、将所有的最短距离相加
             sum_all += d[j]
         # 5、取得sum_all之间的随机值
-        sum_all *= random.rand()
+        sum_all *= np.random.rand()
         # 6、获得距离最远的样本点作为聚类中心点
         for j, di in enumerate(d):
             sum_all=sum_all - di
@@ -44,14 +44,14 @@ def get_centroids(dataset, k):
  
 #主程序
 def Kmeans(dataset,k):
-    row_m=shape(dataset)[0]
-    cluster_assign=zeros((row_m,2))
+    row_m=np.shape(dataset)[0]
+    cluster_assign=np.zeros((row_m,2))
     center=get_centroids(dataset,k)
     change=True
     while change:
         change=False
         for i in range(row_m):
-            mindist=inf
+            mindist=np.inf
             min_index=-1
             for j in range(k):
                 distance1=distance(center[j,:],dataset[i,:])
@@ -62,8 +62,24 @@ def Kmeans(dataset,k):
                 change=True
             cluster_assign[i,:]=min_index,mindist**2
         for cen in range(k):
-            cluster_data=dataset[nonzero(cluster_assign[:,0]==cen)]
-            center[cen,:]=mean(cluster_data,0)
+            cluster_data=dataset[np.nonzero(cluster_assign[:,0]==cen)]
+            center[cen,:]=np.mean(cluster_data,0)
     return center ,cluster_assign
-cluster_center,cluster_assign=Kmeans(datas,3)
+#cluster_center,cluster_assign=Kmeans(datas,3)
 
+def kmeanspp_select(gradient, k):
+    center, cluster_assign = Kmeans(gradient, k)
+    keep_idx = []
+    tot = cluster_assign.shape[0]
+    mapp = {}
+    for i in range(tot):
+        cid = cluster_assign[i][0]
+        dist = cluster_assign[i][1]
+        if not cid in mapp:
+            mapp[cid] = (dist, i)
+        else:
+            if dist < mapp[cid][0]:
+                mapp[cid] = (dist, i)
+    for cid in mapp:
+        keep_idx.append(mapp[cid][1])
+    return keep_idx

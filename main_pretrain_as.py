@@ -136,9 +136,10 @@ if __name__ == '__main__':
     print('run')
 
     model_clone = copy.deepcopy(model)
-    feature_v_pool, feature_a_pool = init_dict(train_loader, model_clone, 300)
-    feature_v_dict, feature_a_dict = init_dict(train_loader, model_clone, 30)
-    nowidx = 0
+    feature_v_pool, feature_a_pool = init_dict(train_loader, model_clone, 10)
+    feature_v_dict, feature_a_dict = init_dict(train_loader, model_clone, 3)
+    nowidx_pool = 0
+    nowidx_dict = 0
 
     for i in range(opt.begin_epoch, opt.n_epochs + 1):
         if not opt.no_train:

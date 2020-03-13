@@ -30,6 +30,11 @@ class VA(nn.Module):
 
     def forward(self, v, a):
 
+        #if swap_av:
+        #    tmp = self.a_fc
+        #    self.a_fc = self.v_fc
+        #    self.v_fc = tmp
+        #    return 0
 
         feature_v = self.v_model.forward_cnn(v)
         a = a.permute(0, 2, 1)
@@ -43,11 +48,6 @@ class VA(nn.Module):
         #feature_a = F.normalize(feature_a, p=2, dim=1)
 
         return feature_v, feature_a
-
-    def swap_av(self):
-        tmp = self.a_fc
-        self.a_fc = self.v_fc
-        self.v_fc = tmp
 
 def generate_model(opt):
     assert opt.model in [

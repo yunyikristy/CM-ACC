@@ -58,9 +58,12 @@ def train_epoch(epoch, data_loader, model, model_clone, feature_v_pool, feature_
 
 
         # sampling hard example based on gradient from pool
-        #target = torch.arange(bs).to(device=device)
+        target = torch.arange(bs).to(device=device)
         feature_a_pool_all = torch.cat([feature_a.detach(), feature_a_pool], dim=0) # (M+N) * 512
         feature_v_pool_all = torch.cat([feature_v.detach(), feature_v_pool], dim=0) # (M+N) * 512
+
+        feature_a_pool_all.requires_grad = True
+        feature_v_pool_all.requires_grad = True
 
         cosv2a = torch.mm(feature_a_pool_all, feature_v.t()).t() # M * (M+N)
         cosa2v = torch.mm(feature_v_pool_all, feature_a.t()).t() # M * (M+N)
@@ -73,21 +76,25 @@ def train_epoch(epoch, data_loader, model, model_clone, feature_v_pool, feature_
 
         # have not tested
 
-        lossv2a.backward()
-        lossa2v.backward()
+        lossv2a.backward(retain_graph=True)
+        lossa2v.backward(retain_graph=True)
 
         a_pool_gradient = feature_a_pool_all.grad.data # (M+N) * 512
         v_pool_gradient = feature_v_pool_all.grad.data # (M+N) * 512
 
 
+        a_pool_gradient = a_pool_gradient.detach().cpu().numpy()
+        v_pool_gradient = v_pool_gradient.detach().cpu().numpy()
+
         # a fake function
-        a_idx = kmeanspp(a_pool_gradient) # M
-        v_idx = kmeanspp(v_pool_gradient) # M
+        a_idx = kmeanspp_select(a_pool_gradient, bs) # M
+        v_idx = kmeanspp_select(v_pool_gradient, bs) # M
 
         a_pool_sample = feature_a_pool_all[a_idx] # M * 512
         v_pool_sample = feature_v_pool_all[v_idx] # M * 512
 
-        pool_shape = a_idx.shape[0]
+        #pool_shape = a_idx.shape[0]
+        pool_shape = len(a_idx)
         
         feature_v_dict[nowidx_dict:nowidx_dict+pool_shape] = v_pool_sample.detach()
         feature_a_dict[nowidx_dict:nowidx_dict+pool_shape] = a_pool_sample.detach()
@@ -118,9 +125,9 @@ def train_epoch(epoch, data_loader, model, model_clone, feature_v_pool, feature_
         loss.backward()
         optimizer.step()
 
-        model_clone.swap_av()
+        #model_clone(v=cosv2a, a=cosa2v, swap_av=True)
         momentum_update(model, model_clone, 0.9)
-        model_clone.swap_av()
+        #model_clone(v=cosv2a, a=cosa2v, swap_av=True)
 
         # update pool
         with torch.no_grad():
