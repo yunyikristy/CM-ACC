@@ -94,13 +94,15 @@ def train_epoch(epoch, data_loader, model, model_clone, feature_v_pool, feature_
         v_pool_sample = feature_v_pool_all[v_idx] # M * 512
 
         #pool_shape = a_idx.shape[0]
-        pool_shape = len(a_idx)
-        
+        pool_shape = a_pool_sample.shape[0]
+
+        if nowidx_dict + pool_shape > feature_v_dict.shape[0]:
+            nowidx_dict = 0
         feature_v_dict[nowidx_dict:nowidx_dict+pool_shape] = v_pool_sample.detach()
         feature_a_dict[nowidx_dict:nowidx_dict+pool_shape] = a_pool_sample.detach()
         nowidx_dict += pool_shape
-        if nowidx_dict + pool_shape > feature_v_dict.shape[0]:
-            nowidx_dict = 0
+        #if nowidx_dict + pool_shape > feature_v_dict.shape[0]:
+        #    nowidx_dict = 0
         # -----
 
 
@@ -132,11 +134,11 @@ def train_epoch(epoch, data_loader, model, model_clone, feature_v_pool, feature_
         # update pool
         with torch.no_grad():
             feature_v, feature_a = model_clone(video, audio)
+            if nowidx_pool + bs > feature_v_pool.shape[0]:
+                nowidx_pool = 0
             feature_v_pool[nowidx_pool:nowidx_pool+bs] = feature_v.detach()
             feature_a_pool[nowidx_pool:nowidx_pool+bs] = feature_a.detach()
             nowidx_pool += bs
-            if nowidx_pool + bs > feature_v_pool.shape[0]:
-                nowidx_pool = 0
 
         batch_time.update(time.time() - end_time)
         end_time = time.time()

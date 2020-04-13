@@ -95,8 +95,8 @@ def make_dataset(root_path, annotation_path, subset, n_samples_for_each_video,
             print('dataset loading [{}/{}]'.format(i, len(video_names)))
 
         video_path = os.path.join(root_path, video_names[i])
-        audio_path = video_path.replace('video', 'audio') + '.npy'
-        audio_path = audio_path.replace('frame', 'audio-npy')
+        audio_path = video_path.replace('video', 'audio-resample') + '.npy'
+        audio_path = audio_path.replace('frame', 'audio-resample-npy')
 
         if not os.path.exists(video_path):
             continue
@@ -107,6 +107,10 @@ def make_dataset(root_path, annotation_path, subset, n_samples_for_each_video,
         n_frames_file_path = os.path.join(video_path, 'n_frames')
         n_frames = int(load_value_file(n_frames_file_path))
         if n_frames <= 0:
+            continue
+
+        n_audio = np.load(audio_path).shape[0]
+        if n_audio *1.0 / n_frames < 3.1:
             continue
 
         begin_t = 1
@@ -201,12 +205,18 @@ class UCF101_va(data.Dataset):
         audio = np.load(self.data[index]['audio'])
         audio_tot = audio.shape[0]
 
-        tmp_indices = np.array(frame_indices).astype(np.float32)
-        tmp_indices = tmp_indices / video_tot * audio_tot
-        audio_indices = tmp_indices.astype(np.int32)
+        #tmp_indices = np.array(frame_indices).astype(np.float32)
+        #tmp_indices = tmp_indices / video_tot * audio_tot
+        #audio_indices = tmp_indices.astype(np.int32)
 
-        audio_indices = np.clip(audio_indices, 0, audio_tot - 1)
-        audio_clip = audio[audio_indices]
+        #audio_indices = np.clip(audio_indices, 0, audio_tot - 1)
+        #audio_clip = audio[audio_indices]
+
+        start_index = int(frame_indices[0]/ video_tot * audio_tot)
+        #end_index = int(frame_indices[-1] / video_tot * audio_tot)
+        end_index = start_index + 48
+
+        audio_clip = audio[start_index:end_index]
 
         audio_clip = torch.from_numpy(audio_clip)
 

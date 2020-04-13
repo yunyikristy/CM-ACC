@@ -20,7 +20,7 @@ class VA(nn.Module):
 
         self.a_model = resnet18_1d()
 
-        self.a_data_bn = nn.BatchNorm1d(80)
+        #self.a_data_bn = nn.BatchNorm1d(1)
 
         self.a_fc = nn.Linear(512,512)
         self.v_fc = nn.Linear(512,512)
@@ -28,18 +28,16 @@ class VA(nn.Module):
         self.v_bn = nn.BatchNorm1d(512)
         self.a_bn = nn.BatchNorm1d(512)
 
+        self.combine_fc = nn.Linear(1024, 2)
+
     def forward(self, v, a):
 
-        #if swap_av:
-        #    tmp = self.a_fc
-        #    self.a_fc = self.v_fc
-        #    self.v_fc = tmp
-        #    return 0
-
         feature_v = self.v_model.forward_cnn(v)
-        a = a.permute(0, 2, 1)
-        a = self.a_data_bn(a)
-        feature_a = self.a_model(a).mean(dim=2)
+        b, h, w = a.shape
+        #a = a.permute(0, 2, 1)
+        a = a.view(b, 1, h, w)
+        #a = self.a_data_bn(a)
+        feature_a = self.a_model(a).mean(dim=(2,3))
 
         feature_v = self.v_bn(feature_v)
         feature_a = self.a_bn(feature_a)
@@ -47,7 +45,15 @@ class VA(nn.Module):
         #feature_v = F.normalize(feature_v, p=2, dim=1)
         #feature_a = F.normalize(feature_a, p=2, dim=1)
 
-        return feature_v, feature_a
+        feature_correct = torch.cat([feature_v, feature_a], dim=1)
+        feature_a_offset = torch.cat([feature_a[1:], feature_a[0:1]], dim=0)
+        feature_wrong = torch.cat([feature_v, feature_a_offset], dim=1)
+
+        fc_correct = self.combine_fc(feature_correct)
+        fc_wrong = self.combine_fc(feature_wrong)
+
+        #return feature_v, feature_a
+        return fc_correct, fc_wrong
 
 def generate_model(opt):
     assert opt.model in [
