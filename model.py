@@ -22,38 +22,49 @@ class VA(nn.Module):
 
         #self.a_data_bn = nn.BatchNorm1d(1)
 
-        self.a_fc = nn.Linear(512,512)
-        self.v_fc = nn.Linear(512,512)
+        #self.a_fc = nn.Linear(512,512)
+        #self.v_fc = nn.Linear(512,512)
 
-        self.v_bn = nn.BatchNorm1d(512)
-        self.a_bn = nn.BatchNorm1d(512)
-
-        self.combine_fc = nn.Linear(1024, 2)
+        #self.v_bn = nn.BatchNorm1d(512)
+        #self.a_bn = nn.BatchNorm1d(512)
 
     def forward(self, v, a):
 
-        feature_v = self.v_model.forward_cnn(v)
+        local_v = self.v_model.forward_cnn(v) # b 512 t h1 w1
+        _, _, t, h1, w1 = local_v.shape
         b, h, w = a.shape
-        #a = a.permute(0, 2, 1)
         a = a.view(b, 1, h, w)
-        #a = self.a_data_bn(a)
-        feature_a = self.a_model(a).mean(dim=(2,3))
+        local_a = self.a_model(a) # b 512 h2 w2
+        _, _, h2, w2 = local_a.shape
 
-        feature_v = self.v_bn(feature_v)
-        feature_a = self.a_bn(feature_a)
+        global_v = local_v.mean(dim=(2,3,4)) # b 512
+        global_a = local_a.mean(dim=(2,3)) # b 512
 
-        #feature_v = F.normalize(feature_v, p=2, dim=1)
-        #feature_a = F.normalize(feature_a, p=2, dim=1)
+        feat_dim = global_v.shape[1]
+        device = global_v.device
 
-        feature_correct = torch.cat([feature_v, feature_a], dim=1)
-        feature_a_offset = torch.cat([feature_a[1:], feature_a[0:1]], dim=0)
-        feature_wrong = torch.cat([feature_v, feature_a_offset], dim=1)
+        local_v = local_v.permute(0, 2, 3, 4, 1) # b t h1 w1 512
+        local_v = local_v.reshape(-1, feat_dim) # b*h1*w1 512
+        local_a = local_a.permute(0, 2, 3 ,1) # b h2 w2 512
+        local_a = local_a.reshape(-1, feat_dim) # b*h2*w2 512
 
-        fc_correct = self.combine_fc(feature_correct)
-        fc_wrong = self.combine_fc(feature_wrong)
+        dot_va = torch.mm(global_v, local_a.t()) # b b*h2*w2
+        dot_av = torch.mm(global_a, local_v.t()) # b b*t*h1*w1
 
-        #return feature_v, feature_a
-        return fc_correct, fc_wrong
+        dot_va = dot_va.view(b, b, h2, w2)
+        dot_av = dot_av.view(b, b, t, h1, w1)
+
+        dot_va = dot_va.permute(0, 2, 3, 1) # b h2 w2 b
+        dot_va = dot_va.reshape(b*h2*w2, b)
+        dot_av = dot_av.permute(0, 2, 3, 4, 1) # b t h1 w1 b
+        dot_av = dot_av.reshape(b*t*h1*w1, b)
+
+        label = torch.arange(b).to(device=device) # b
+        label = label.view(b, 1)
+        label_va = label.repeat(1, h2*w2).view(-1)
+        label_av = label.repeat(1, t*h1*w1).view(-1)
+
+        return dot_va, dot_av, label_va, label_av
 
 def generate_model(opt):
     assert opt.model in [

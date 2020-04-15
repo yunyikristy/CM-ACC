@@ -201,9 +201,9 @@ class ResNet(nn.Module):
         x = self.layer3(x)
         x = self.layer4(x)
 
-        x = self.avgpool(x)
+        #x = self.avgpool(x)
 
-        x = x.view(x.size(0), -1)
+        #x = x.view(x.size(0), -1)
         return x
 
 
