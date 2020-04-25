@@ -15,24 +15,6 @@ import tarfile
 from io import BytesIO
 import time
 
-class MyTar(tarfile.TarFile):
-
-    def build_index(self):
-        if not self._loaded:
-            self._load()
-        self.member_map = {}
-        cc = []
-        print(len(self.members))
-        for member in self.members:
-            name = member.name
-            cc.append(name)
-            self.member_map[name] = member
-        print(cc[:10])
-
-    def _getmember(self, name, tarinfo=None, normalize=False):
-        return self.member_map[name]
-
-
 def pil_loader(path):
     # open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
     with open(path, 'rb') as f:
@@ -325,6 +307,23 @@ class Kinetics_va(data.Dataset):
     def __len__(self):
         return len(self.data)
 
+class TarReader(object):
+    def __init__(self):
+        super(TarReader, self).__init__()
+        self.id_context = dict()
+
+    def read(self, tar_file, image_name):
+        if tar_file in self.id_context:
+            im = self.id_context[tar_file].extractfile(image_name)
+            return im.read()
+        else:
+            file_handle = tarfile.open(tar_file)
+            self.id_context[tar_file] = file_handle
+            im = self.id_context[tar_file].extractfile(image_name)
+            return im.read()
+        
+
+
 class Kinetics_va_tar(data.Dataset):
     def __init__(self,
                  root_path,
@@ -337,25 +336,34 @@ class Kinetics_va_tar(data.Dataset):
                  sample_duration=16,
                  get_loader=get_default_video_loader):
 
-        #self.image_tar = MyTar.gzopen(root_path + '/a.tar', 'r')
-        self.image_tar = tarfile.open(root_path + '/tmp.tar', 'r')
-        #self.image_tar.build_index()
+        tarlist = []
+        a = os.walk(root_path)
+        for b, c, d in a:
+            for item in d:
+                if item.endswith('.tar'):
+                    tarlist.append(b + '/' + item)
 
-        namelist = self.image_tar.getnames()
+        self.tarreader = TarReader()
 
-        self.image_name_map = {}
+        self.video_name_map = {}
+        self.video_tar_map = {}
         self.video_paths = set()
-        for n in namelist:
-            if n.endswith('.jpg'):
-                tmp = n.split('/')
-                newn = tmp[-3] +'/' + tmp[-2] +'/' + tmp[-1]
-                self.image_name_map[newn] = n
-                self.video_paths.add(tmp[-3] + '/' + tmp[-2])
+        for i, tarname in enumerate(tarlist):
+            print('loading ', i, tarname)
+            image_tar = tarfile.open(tarname)
+            namelist = image_tar.getnames()
+            print(namelist[:20])
+            for n in namelist:
+                if n.endswith('.jpg'):
+                    tmp = n.split('/')
+                    newn = '/'.join(tmp[-3:])
+                    self.video_name_map[newn] = n
+                    self.video_tar_map[n] = tarname
+                    self.video_paths.add(tmp[-3] + '/' + tmp[-2])
 
-        self.audio_tar = tarfile.open(root_path.replace('/video', '') + '/audio/audio.tar')
-        #self.audio_tar = MyTar.gzopen(root_path.replace('/video', '') + '/audio/audio.tar')
-        #self.audio_tar.build_index()
-        namelist = self.audio_tar.getnames()
+        self.audio_tarname = root_path.replace('/video', '') + '/audio/audio.tar'
+        audio_tar = tarfile.open(self.audio_tarname)
+        namelist = audio_tar.getnames()
         self.audio_name_map = {}
         self.audio_paths = set()
         for n in namelist:
@@ -365,10 +373,6 @@ class Kinetics_va_tar(data.Dataset):
                 self.audio_name_map[newn] = n
                 self.audio_paths.add(tmp[-2] + '/' + tmp[-1])
 
-        #keys = list(self.audio_name_map.keys())[:10]
-        #for k in keys:
-        #    print(k, self.audio_name_map[k])
-
         self.data, self.class_names = make_dataset_tar(
             root_path, annotation_path, subset, n_samples_for_each_video,
             sample_duration, self.video_paths, self.audio_paths)
@@ -376,18 +380,17 @@ class Kinetics_va_tar(data.Dataset):
         self.spatial_transform = spatial_transform
         self.temporal_transform = temporal_transform
         self.target_transform = target_transform
-        #self.loader = get_loader()
-
     
     def loader(self, path, frame_indices):
         video = []
         for i in frame_indices:
             image_path = path + '/image_{:05d}.jpg'.format(i)
 
-            if image_path in self.image_name_map:
-                im = self.image_tar.extractfile(self.image_name_map[image_path])
-                im = Image.open(BytesIO(im.read()))
-
+            if image_path in self.video_name_map:
+                video_name = self.video_name_map[image_path]
+                tar_name = self.video_tar_map[video_name]
+                im = self.tarreader.read(tar_name, video_name)
+                im = Image.open(BytesIO(im))
                 video.append(im)
         return video
 
@@ -409,8 +412,8 @@ class Kinetics_va_tar(data.Dataset):
         clip = self.loader(path, frame_indices)
 
         audio_path = self.data[index]['audio']
-        audio = self.audio_tar.extractfile(self.audio_name_map[audio_path])
-        audio = np.load(BytesIO(audio.read()))
+        audio = self.tarreader.read(self.audio_tarname, self.audio_name_map[audio_path])
+        audio = np.load(BytesIO(audio))
         audio_tot = audio.shape[0]
 
         tmp_indices = np.array(frame_indices).astype(np.float32)
