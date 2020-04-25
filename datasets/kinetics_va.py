@@ -321,7 +321,15 @@ class TarReader(object):
             self.id_context[tar_file] = file_handle
             im = self.id_context[tar_file].extractfile(image_name)
             return im.read()
-        
+
+    def getnames(self, tar_file):
+        if tar_file in self.id_context:
+            im = self.id_context[tar_file].getnames()
+        else:
+            file_handle = tarfile.open(tar_file)
+            self.id_context[tar_file] = file_handle
+            im = self.id_context[tar_file].getnames()
+        return im
 
 
 class Kinetics_va_tar(data.Dataset):
@@ -349,10 +357,11 @@ class Kinetics_va_tar(data.Dataset):
         self.video_tar_map = {}
         self.video_paths = set()
         for i, tarname in enumerate(tarlist):
-            print('loading ', i, tarname)
-            image_tar = tarfile.open(tarname)
-            namelist = image_tar.getnames()
-            print(namelist[:20])
+            ss = time.time()
+            namelist = self.tarreader.getnames(tarname)
+            ee = time.time()
+            readtime = ee - ss
+            ss = time.time()
             for n in namelist:
                 if n.endswith('.jpg'):
                     tmp = n.split('/')
@@ -360,6 +369,9 @@ class Kinetics_va_tar(data.Dataset):
                     self.video_name_map[newn] = n
                     self.video_tar_map[n] = tarname
                     self.video_paths.add(tmp[-3] + '/' + tmp[-2])
+            ee = time.time()
+            buildtime = ee - ss
+            print('loading ', i, tarname, readtime, buildtime)
 
         self.audio_tarname = root_path.replace('/video', '') + '/audio/audio.tar'
         audio_tar = tarfile.open(self.audio_tarname)
