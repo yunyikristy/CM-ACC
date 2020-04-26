@@ -8,6 +8,7 @@ import json
 import copy
 import cv2
 import numpy as np
+import pickle
 
 from utils import load_value_file
 
@@ -327,6 +328,14 @@ class TarReader(object):
             im = self.id_context[tar_file].getnames()
         else:
             file_handle = tarfile.open(tar_file)
+            pkl_file = tar_file.replace('.tar', '.pkl')
+            if not os.path.exists(pkl_file):
+                members = file_handle.getmembers()
+                pickle.dump(members, open(pkl_file, 'wb'))
+            else:
+                members = pickle.load(open(pkl_file, 'rb'))
+                file_handle.members = members
+                file_handle._loaded = True
             self.id_context[tar_file] = file_handle
             im = self.id_context[tar_file].getnames()
         return im
@@ -374,8 +383,12 @@ class Kinetics_va_tar(data.Dataset):
             print('loading ', i, tarname, readtime, buildtime)
 
         self.audio_tarname = root_path.replace('/video', '') + '/audio/audio.tar'
-        audio_tar = tarfile.open(self.audio_tarname)
-        namelist = audio_tar.getnames()
+        #audio_tar = tarfile.open(self.audio_tarname)
+        #namelist = audio_tar.getnames()
+        ss = time.time()
+        namelist = self.tarreader.getnames(self.audio_tarname)
+        ee = time.time()
+        print('loading audio', ee - ss)
         self.audio_name_map = {}
         self.audio_paths = set()
         for n in namelist:
