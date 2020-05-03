@@ -82,7 +82,8 @@ if __name__ == '__main__':
             batch_size=opt.batch_size,
             shuffle=True,
             num_workers=opt.n_threads,
-            pin_memory=True)
+            pin_memory=True,
+            drop_last=True)
         train_logger = Logger(
             os.path.join(opt.result_path, 'train.log'),
             ['epoch', 'loss', 'acc', 'lr'])
