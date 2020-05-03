@@ -13,8 +13,123 @@ import pickle
 from utils import load_value_file
 
 import tarfile
+import threading
+import multiprocessing
+import zipfile
 from io import BytesIO
+import io
 import time
+
+class _FileInFile(object):
+    """A thin wrapper around an existing file object that
+       provides a part of its data as an individual file
+       object.
+    """
+
+    def __init__(self, fileobj, offset, size, blockinfo=None):
+        self.fileobj = fileobj
+        self.offset = offset
+        self.size = size
+        self.position = 0
+        self.name = getattr(fileobj, "name", None)
+        self.closed = False
+
+        if blockinfo is None:
+            blockinfo = [(0, size)]
+
+        # Construct a map with data and zero blocks.
+        self.map_index = 0
+        self.map = []
+        lastpos = 0
+        realpos = self.offset
+        for offset, size in blockinfo:
+            if offset > lastpos:
+                self.map.append((False, lastpos, offset, None))
+            self.map.append((True, offset, offset + size, realpos))
+            realpos += size
+            lastpos = offset + size
+        if lastpos < self.size:
+            self.map.append((False, lastpos, self.size, None))
+
+    def flush(self):
+        pass
+
+    def readable(self):
+        return True
+
+    def writable(self):
+        return False
+
+    def seekable(self):
+        return self.fileobj.seekable()
+
+    def tell(self):
+        """Return the current file position.
+        """
+        return self.position
+
+    def seek(self, position, whence=io.SEEK_SET):
+        """Seek to a position in the file.
+        """
+        if whence == io.SEEK_SET:
+            self.position = min(max(position, 0), self.size)
+        elif whence == io.SEEK_CUR:
+            if position < 0:
+                self.position = max(self.position + position, 0)
+            else:
+                self.position = min(self.position + position, self.size)
+        elif whence == io.SEEK_END:
+            self.position = max(min(self.size + position, self.size), 0)
+        else:
+            raise ValueError("Invalid argument")
+        return self.position
+
+    def read(self, size=None):
+        """Read data from the file.
+        """
+        if size is None:
+            size = self.size - self.position
+        else:
+            size = min(size, self.size - self.position)
+
+        buf = b""
+        while size > 0:
+            while True:
+                data, start, stop, offset = self.map[self.map_index]
+                if start <= self.position < stop:
+                    break
+                else:
+                    self.map_index += 1
+                    if self.map_index == len(self.map):
+                        self.map_index = 0
+            length = min(size, stop - self.position)
+            if data:
+                self.fileobj.seek(offset + (self.position - start))
+                b = self.fileobj.read(length)
+                if len(b) != length:
+                    raise ReadError("unexpected end of data")
+                buf += b
+            else:
+                buf += NUL * length
+            size -= length
+            self.position += length
+        return buf
+
+    def readinto(self, b):
+        buf = self.read(len(b))
+        b[:len(buf)] = buf
+        return len(buf)
+
+    def close(self):
+        self.closed = True
+#class _FileInFile
+
+class ExFileObject(io.BufferedReader):
+
+    def __init__(self, fileobj, tarinfo):
+        fileobj = _FileInFile(fileobj, tarinfo.offset_data,
+                tarinfo.size, tarinfo.sparse)
+        super().__init__(fileobj)
 
 def pil_loader(path):
     # open path as file to avoid ResourceWarning (https://github.com/python-pillow/Pillow/issues/835)
@@ -94,16 +209,17 @@ def make_dataset_tar(root_path, subset, n_samples_for_each_video,
 
     dataset = []
     for i in range(len(video_names)):
-        if i % 1000 == 0:
+        if i % 10000 == 0:
             print('dataset loading [{}/{}]'.format(i, len(video_names)))
 
         video_path = video_names[i]
-        audio_path = video_path + '.npy'
+        audio_path = video_path.replace('.jpg', '.npy')
 
         if not audio_path in audio_paths:
             continue
 
-        n_frames = video_paths[video_path]
+        #n_frames = video_paths[video_path]
+        n_frames = 31
 
         begin_t = 1
         end_t = n_frames
@@ -168,8 +284,37 @@ class TarReader(object):
                 self.name2member[m.name] = m
 
             self.id_context[tar_file] = file_handle
+            #self.lock[tar_file] = threading.RLock()
             im = self.id_context[tar_file].getnames()
         return im
+
+class ZipReader(object):
+    def __init__(self):
+        super(ZipReader, self).__init__()
+        self.id_context = dict()
+        self.lock = multiprocessing.Lock()
+
+    def read(self, zip_file, image_name):
+        if zip_file in self.id_context:
+            with self.lock:
+                im = self.id_context[zip_file].open(image_name)
+                res = im.read()
+            return res
+        else:
+            file_handle = zipfile.ZipFile(zip_file)
+            self.id_context[zip_file] = file_handle
+            im = self.id_context[zip_file].open(image_name)
+            return im.read()
+
+    def getnames(self, zip_file):
+        if zip_file in self.id_context:
+            im = self.id_context[zip_file].namelist()
+        else:
+            file_handle = zipfile.ZipFile(zip_file)
+            self.id_context[zip_file] = file_handle
+            im = self.id_context[zip_file].namelist()
+        return im
+
 
 
 class Lrw_va_tar(data.Dataset):
@@ -183,21 +328,21 @@ class Lrw_va_tar(data.Dataset):
                  sample_duration=16,
                  get_loader=get_default_video_loader):
 
-        tarlist = []
+        ziplist = []
         a = os.walk(root_path)
         for b, c, d in a:
             for item in d:
-                if item.endswith('.tar'):
-                    tarlist.append(b + '/' + item)
+                if item.endswith('.zip'):
+                    ziplist.append(b + '/' + item)
 
-        self.tarreader = TarReader()
+        self.zipreader = ZipReader()
 
         self.video_name_map = {}
-        self.video_tar_map = {}
+        self.video_zip_map = {}
         self.video_paths = {}
-        for i, tarname in enumerate(tarlist):
+        for i, zipname in enumerate(ziplist):
             ss = time.time()
-            namelist = self.tarreader.getnames(tarname)
+            namelist = self.zipreader.getnames(zipname)
             ee = time.time()
             readtime = ee - ss
             ss = time.time()
@@ -206,23 +351,20 @@ class Lrw_va_tar(data.Dataset):
                 if n.endswith('.jpg'):
                     tmp = n.split('/')
                     newn = '/'.join(tmp[1:])
-                    video_name = '/'.join(tmp[1:-1])
+                    video_name = newn
                     
-                    newn = newn.replace('/val/', '/train/')
-                    video_name = video_name.replace('/val/', '/train/')
-
                     self.video_name_map[newn] = n
-                    self.video_tar_map[n] = tarname
+                    self.video_zip_map[n] = zipname
                     if not video_name in self.video_paths:
                         self.video_paths[video_name] = 0
                     self.video_paths[video_name] += 1
             ee = time.time()
             buildtime = ee - ss
-            print('loading ', i, tarname, readtime, buildtime)
+            print('loading ', i, zipname, readtime, buildtime)
 
-        self.audio_tarname = root_path.replace('/video', '') + '/audio/audio.tar'
+        self.audio_zipname = root_path.replace('/video', '') + '/audio/audio.zip'
         ss = time.time()
-        namelist = self.tarreader.getnames(self.audio_tarname)
+        namelist = self.zipreader.getnames(self.audio_zipname)
         ee = time.time()
         print('loading audio', ee - ss)
         self.audio_name_map = {}
@@ -245,16 +387,24 @@ class Lrw_va_tar(data.Dataset):
         self.target_transform = target_transform
     
     def loader(self, path, frame_indices):
-        video = []
-        for i in frame_indices:
-            image_path = path + '/image_{:05d}.jpg'.format(i)
+        #for i in frame_indices:
+            #image_path = path + '/image_{:05d}.jpg'.format(i)
 
-            if image_path in self.video_name_map:
-                video_name = self.video_name_map[image_path]
-                tar_name = self.video_tar_map[video_name]
-                im = self.tarreader.read(tar_name, video_name)
-                im = Image.open(BytesIO(im))
-                video.append(im)
+            #if image_path in self.video_name_map:
+            #    video_name = self.video_name_map[image_path]
+            #    tar_name = self.video_tar_map[video_name]
+            #    im = self.tarreader.read(tar_name, video_name)
+            #    im = Image.open(BytesIO(im))
+            #    video.append(im)
+
+
+        image_path = path
+        video_name = self.video_name_map[image_path]
+        zip_name = self.video_zip_map[video_name]
+        im = self.zipreader.read(zip_name, video_name)
+        im = Image.open(BytesIO(im))
+        im = np.asarray(im)
+        video = [Image.fromarray(im[:, i*240:(i+1)*240, :]) for i in frame_indices]
         return video
 
     def __getitem__(self, index):
@@ -275,8 +425,8 @@ class Lrw_va_tar(data.Dataset):
         clip = self.loader(path, frame_indices)
 
         audio_path = self.data[index]['audio']
-        audio = self.tarreader.read(self.audio_tarname, self.audio_name_map[audio_path])
-        audio = np.load(BytesIO(audio))
+        audio = self.zipreader.read(self.audio_zipname, self.audio_name_map[audio_path])
+        audio = np.load(BytesIO(audio), allow_pickle=True)
         audio_tot = audio.shape[0]
 
         tmp_indices = np.array(frame_indices).astype(np.float32)
